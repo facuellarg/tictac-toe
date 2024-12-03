@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'dart:math';
 
 enum Difficulty { easy, medium, hard }
@@ -184,6 +184,7 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
   String message = '';
   final random = Random();
   Difficulty difficulty = Difficulty.medium; // Default difficulty
+  final AudioPlayer audioPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -191,21 +192,35 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
     message = 'Your turn (X)';
   }
 
+  @override
+  void dispose() {
+    audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _playSound(String soundName) async {
+    await audioPlayer.stop();
+    await audioPlayer.play(AssetSource('sounds/$soundName.mp3'));
+  }
+
   void _handlePlayerMove(int row, int col) {
     if (board[row][col] != 0 || gameOver || !isPlayerTurn) return;
 
+    _playSound('click');
     setState(() {
       // Player's move
       board[row][col] = 1;
       if (_checkWinner(row, col)) {
         gameOver = true;
         message = 'Game over: You won!';
+        _playSound('win');
         return;
       }
 
       if (_isBoardFull()) {
         gameOver = true;
         message = 'Game over: Draw!';
+        _playSound('draw');
         return;
       }
 
@@ -236,17 +251,20 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
         break;
     }
 
+    _playSound('click');
     setState(() {
       board[row][col] = 2;
       if (_checkWinner(row, col)) {
         gameOver = true;
         message = 'Game over: Computer won!';
+        _playSound('lose');
         return;
       }
 
       if (_isBoardFull()) {
         gameOver = true;
         message = 'Game over: Draw!';
+        _playSound('draw');
         return;
       }
 
@@ -395,6 +413,17 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
     });
   }
 
+  Widget _buildCell(int value, double size) {
+    if (value == 0) return Container();
+
+    return Image.asset(
+      value == 1 ? 'assets/images/x.png' : 'assets/images/o.png',
+      width: size * 0.8, // Make image slightly smaller than cell
+      height: size * 0.8,
+      fit: BoxFit.contain,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final Size screenSize = MediaQuery.of(context).size;
@@ -402,7 +431,7 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
         ? screenSize.height * 0.7
         : screenSize.width * 0.9;
     final double messageFontSize = screenSize.width * 0.06;
-    final double symbolFontSize = gameboardSize * 0.15;
+    final double cellSize = (gameboardSize * 0.9) / 3; // Account for padding
 
     return Scaffold(
       backgroundColor: Colors.black87,
@@ -484,20 +513,7 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
                                 BorderRadius.circular(gameboardSize * 0.02),
                           ),
                           child: Center(
-                            child: Text(
-                              board[row][col] == 0
-                                  ? ''
-                                  : board[row][col] == 1
-                                      ? 'X'
-                                      : 'O',
-                              style: TextStyle(
-                                fontSize: symbolFontSize,
-                                fontWeight: FontWeight.bold,
-                                color: board[row][col] == 1
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                            ),
+                            child: _buildCell(board[row][col], cellSize),
                           ),
                         ),
                       );
