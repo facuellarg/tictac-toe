@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
 
-enum Difficulty { easy, medium, hard }
+import 'dart:math';
 
 void main() {
   runApp(MaterialApp(home: TicTacToeGame()));
@@ -14,18 +14,46 @@ class TicTacToeGame extends StatefulWidget {
 }
 
 class _TicTacToeGameState extends State<TicTacToeGame> {
+  static const String PLAYER_SCORE_KEY = 'player_score';
+  static const String COMPUTER_SCORE_KEY = 'computer_score';
+  static const String DRAWS_KEY = 'draws';
+
+  // Add method to load scores
+  Future<void> _loadScores() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      playerScore = prefs.getInt(PLAYER_SCORE_KEY) ?? 0;
+      computerScore = prefs.getInt(COMPUTER_SCORE_KEY) ?? 0;
+      draws = prefs.getInt(DRAWS_KEY) ?? 0;
+    });
+  }
+
+  // Add method to save scores
+  Future<void> _saveScores() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(PLAYER_SCORE_KEY, playerScore);
+    await prefs.setInt(COMPUTER_SCORE_KEY, computerScore);
+    await prefs.setInt(DRAWS_KEY, draws);
+  }
+
   List<List<int>> board = List.generate(3, (_) => List.filled(3, 0));
-  bool isPlayerTurn = true; // Player is X (1), Computer is O (2)
+  bool isPlayerTurn = true;
   bool gameOver = false;
   String message = '';
   final random = Random();
-  Difficulty difficulty = Difficulty.medium; // Default difficulty
+  Difficulty difficulty = Difficulty.medium;
   final AudioPlayer audioPlayer = AudioPlayer();
+
+  // Score tracking
+  int playerScore = 0;
+  int computerScore = 0;
+  int draws = 0;
 
   @override
   void initState() {
     super.initState();
     message = 'Your turn (X)';
+    _loadScores();
   }
 
   @override
@@ -37,76 +65,6 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
   Future<void> _playSound(String soundName) async {
     await audioPlayer.stop();
     await audioPlayer.play(AssetSource('sounds/$soundName.mp3'));
-  }
-
-  void _handlePlayerMove(int row, int col) {
-    if (board[row][col] != 0 || gameOver || !isPlayerTurn) return;
-
-    _playSound('click');
-    setState(() {
-      // Player's move
-      board[row][col] = 1;
-      if (_checkWinner(row, col)) {
-        gameOver = true;
-        message = 'Game over: You won!';
-        _playSound('win');
-        return;
-      }
-
-      if (_isBoardFull()) {
-        gameOver = true;
-        message = 'Game over: Draw!';
-        _playSound('draw');
-        return;
-      }
-
-      // Computer's turn
-      isPlayerTurn = false;
-      message = "Computer's turn (O)";
-    });
-
-    // Add a small delay before computer moves
-    Future.delayed(Duration(milliseconds: 500), () {
-      if (!gameOver) _makeComputerMove();
-    });
-  }
-
-  void _makeComputerMove() {
-    if (gameOver) return;
-
-    int row, col;
-    switch (difficulty) {
-      case Difficulty.easy:
-        (row, col) = _makeEasyMove();
-        break;
-      case Difficulty.medium:
-        (row, col) = _makeMediumMove();
-        break;
-      case Difficulty.hard:
-        (row, col) = _makeHardMove();
-        break;
-    }
-
-    _playSound('click');
-    setState(() {
-      board[row][col] = 2;
-      if (_checkWinner(row, col)) {
-        gameOver = true;
-        message = 'Game over: Computer won!';
-        _playSound('lose');
-        return;
-      }
-
-      if (_isBoardFull()) {
-        gameOver = true;
-        message = 'Game over: Draw!';
-        _playSound('draw');
-        return;
-      }
-
-      isPlayerTurn = true;
-      message = 'Your turn (X)';
-    });
   }
 
   // Easy: Random empty cell
@@ -263,23 +221,74 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
   @override
   Widget build(BuildContext context) {
     final Size screenSize = MediaQuery.of(context).size;
-    final double gameboardSize = screenSize.width > screenSize.height
-        ? screenSize.height * 0.7
-        : screenSize.width * 0.9;
-    final double messageFontSize = screenSize.width * 0.06;
-    final double cellSize = (gameboardSize * 0.9) / 3; // Account for padding
+    final bool isLandscape = screenSize.width > screenSize.height;
+
+    // Calculate sizes based on orientation
+    final double gameboardSize = isLandscape
+        ? screenSize.height * 0.8 // Smaller in landscape
+        : screenSize.width * 0.9; // Larger in portrait
+
+    final double messageFontSize =
+        isLandscape ? screenSize.height * 0.04 : screenSize.width * 0.06;
 
     return Scaffold(
       backgroundColor: Colors.black87,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Padding(
-                  padding: EdgeInsets.all(gameboardSize * 0.05),
-                  child: Row(
+        child: isLandscape
+            ? _buildLandscapeLayout(gameboardSize, messageFontSize, screenSize)
+            : _buildPortraitLayout(gameboardSize, messageFontSize),
+      ),
+    );
+  }
+
+  Widget _buildLandscapeLayout(
+      double gameboardSize, double messageFontSize, Size screenSize) {
+    return Row(
+      children: [
+        // Game Board Section (Left)
+        Expanded(
+          flex: 2,
+          child: Center(
+            child: SingleChildScrollView(
+                child: _buildGameBoard(gameboardSize, messageFontSize)),
+          ),
+        ),
+
+        // Dashboard Section (Right)
+        Expanded(
+          flex: 1,
+          child: Container(
+            padding: EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.grey[900],
+              border: Border(
+                left: BorderSide(
+                  color: Colors.grey[800]!,
+                  width: 2,
+                ),
+              ),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'SCOREBOARD',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: messageFontSize * 1.2,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 30),
+                  _buildScoreCard('Player (X)', playerScore, Colors.green),
+                  SizedBox(height: 20),
+                  _buildScoreCard('Computer (O)', computerScore, Colors.red),
+                  SizedBox(height: 20),
+                  _buildScoreCard('Draws', draws, Colors.grey),
+                  SizedBox(height: 40),
+                  // Difficulty Selector
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
@@ -313,78 +322,305 @@ class _TicTacToeGameState extends State<TicTacToeGame> {
                       ),
                     ],
                   ),
-                ),
-                Padding(
-                  padding: EdgeInsets.all(gameboardSize * 0.05),
-                  child: Text(
-                    message,
-                    style: TextStyle(
-                      fontSize: messageFontSize,
-                      color: Colors.white,
+                  SizedBox(height: 20),
+                  // Reset Scores Button
+                  ElevatedButton(
+                    onPressed: _resetScores,
+                    child: Text(
+                      'Reset Scores',
+                      style: TextStyle(fontSize: messageFontSize * 0.7),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-                Container(
-                  width: gameboardSize,
-                  height: gameboardSize,
-                  padding: EdgeInsets.all(gameboardSize * 0.05),
-                  child: GridView.builder(
-                    physics: NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: gameboardSize * 0.02,
-                      mainAxisSpacing: gameboardSize * 0.02,
-                    ),
-                    itemCount: 9,
-                    itemBuilder: (context, index) {
-                      final row = index ~/ 3;
-                      final col = index % 3;
-                      return GestureDetector(
-                        onTap: () => _handlePlayerMove(row, col),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Colors.grey[800],
-                            borderRadius:
-                                BorderRadius.circular(gameboardSize * 0.02),
-                          ),
-                          child: Center(
-                            child: _buildCell(board[row][col], cellSize),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                if (gameOver)
-                  Padding(
-                    padding: EdgeInsets.only(top: gameboardSize * 0.05),
-                    child: ElevatedButton(
-                      onPressed: _resetGame,
-                      child: Text(
-                        'Play Again',
-                        style: TextStyle(fontSize: messageFontSize * 0.7),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Theme.of(context).primaryColor,
-                        foregroundColor:
-                            Theme.of(context).colorScheme.onPrimary,
-                        padding: EdgeInsets.symmetric(
-                          horizontal: gameboardSize * 0.1,
-                          vertical: gameboardSize * 0.03,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(gameboardSize * 0.02),
-                        ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 30,
+                        vertical: 15,
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildPortraitLayout(double gameboardSize, double messageFontSize) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Score summary in portrait mode
+          Padding(
+            padding: EdgeInsets.all(10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildCompactScore('Player', playerScore, Colors.green),
+                _buildCompactScore('Draws', draws, Colors.grey),
+                _buildCompactScore('Computer', computerScore, Colors.red),
+              ],
+            ),
+          ),
+          // Difficulty selector
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Difficulty: ',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: messageFontSize * 0.7,
+                ),
+              ),
+              DropdownButton<Difficulty>(
+                value: difficulty,
+                dropdownColor: Colors.grey[800],
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: messageFontSize * 0.7,
+                ),
+                onChanged: (Difficulty? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      difficulty = newValue;
+                      _resetGame();
+                    });
+                  }
+                },
+                items: Difficulty.values.map((Difficulty difficulty) {
+                  return DropdownMenuItem<Difficulty>(
+                    value: difficulty,
+                    child: Text(difficulty.name.toUpperCase()),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          _buildGameBoard(gameboardSize, messageFontSize),
+        ],
       ),
     );
   }
+
+  Widget _buildGameBoard(double gameboardSize, double messageFontSize) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Padding(
+          padding: EdgeInsets.all(gameboardSize * 0.05),
+          child: Text(
+            message,
+            style: TextStyle(
+              fontSize: messageFontSize,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        Container(
+          width: gameboardSize,
+          height: gameboardSize,
+          padding: EdgeInsets.all(gameboardSize * 0.05),
+          child: GridView.builder(
+            physics: NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: gameboardSize * 0.02,
+              mainAxisSpacing: gameboardSize * 0.02,
+            ),
+            itemCount: 9,
+            itemBuilder: (context, index) {
+              final row = index ~/ 3;
+              final col = index % 3;
+              return GestureDetector(
+                onTap: () => _handlePlayerMove(row, col),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey[800],
+                    borderRadius: BorderRadius.circular(gameboardSize * 0.02),
+                  ),
+                  child: Center(
+                    child: _buildCell(board[row][col], gameboardSize / 3),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (gameOver)
+          Padding(
+            padding: EdgeInsets.only(top: gameboardSize * 0.05),
+            child: ElevatedButton(
+              onPressed: _resetGame,
+              child: Text(
+                'Play Again',
+                style: TextStyle(fontSize: messageFontSize * 0.7),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                padding: EdgeInsets.symmetric(
+                  horizontal: gameboardSize * 0.1,
+                  vertical: gameboardSize * 0.03,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(gameboardSize * 0.02),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildScoreCard(String title, int score, Color color) {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 15, horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.grey[850],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.5), width: 2),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+            ),
+          ),
+          Text(
+            score.toString(),
+            style: TextStyle(
+              color: color,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactScore(String title, int score, Color color) {
+    return Column(
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+          ),
+        ),
+        Text(
+          score.toString(),
+          style: TextStyle(
+            color: color,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _resetScores() {
+    setState(() {
+      playerScore = 0;
+      computerScore = 0;
+      draws = 0;
+      _saveScores();
+      _resetGame();
+    });
+  }
+
+  // Update your _handlePlayerMove to update scores
+  void _handlePlayerMove(int row, int col) {
+    if (board[row][col] != 0 || gameOver || !isPlayerTurn) return;
+
+    _playSound('click');
+
+    setState(() {
+      board[row][col] = 1;
+      if (_checkWinner(row, col)) {
+        gameOver = true;
+        message = 'Game over: You won!';
+        playerScore++; // Update player score
+        _saveScores();
+        _playSound('win');
+        return;
+      }
+
+      if (_isBoardFull()) {
+        gameOver = true;
+        message = 'Game over: Draw!';
+        draws++; // Update draws
+        _saveScores();
+        _playSound('draw');
+        return;
+      }
+
+      isPlayerTurn = false;
+      message = "Computer's turn (O)";
+    });
+
+    Future.delayed(Duration(milliseconds: 500), () {
+      if (!gameOver) _makeComputerMove();
+    });
+  }
+
+  // Update computer move to handle scoring
+  void _makeComputerMove() {
+    if (gameOver) return;
+
+    int row, col;
+    switch (difficulty) {
+      case Difficulty.easy:
+        (row, col) = _makeEasyMove();
+        break;
+      case Difficulty.medium:
+        (row, col) = _makeMediumMove();
+        break;
+      case Difficulty.hard:
+        (row, col) = _makeHardMove();
+        break;
+    }
+
+    _playSound('click');
+
+    setState(() {
+      board[row][col] = 2;
+      if (_checkWinner(row, col)) {
+        gameOver = true;
+        message = 'Game over: Computer won!';
+        computerScore++; // Update computer score
+        _saveScores();
+        _playSound('win');
+        return;
+      }
+
+      if (_isBoardFull()) {
+        gameOver = true;
+        message = 'Game over: Draw!';
+        draws++; // Update draws
+        _saveScores();
+        _playSound('draw');
+        return;
+      }
+
+      isPlayerTurn = true;
+      message = 'Your turn (X)';
+    });
+  }
+
+  // [Keep all your existing helper methods like _makeEasyMove, _makeMediumMove, etc.]
 }
+
+enum Difficulty { easy, medium, hard }
