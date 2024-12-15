@@ -918,8 +918,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
   Future<void> _makeMove(
       Map<dynamic, dynamic> gameData, int row, int col) async {
     try {
+      print('Attempting move: row=$row, col=$col'); // Debug print
       // Check if game is already complete
       if (gameData['isComplete'] == true) return;
+
+      if (gameData['opponent'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Waiting for opponent to join...')));
+        return;
+      }
 
       // Check if it's user's turn and cell is empty
       if (gameData['currentTurn'] != userId ||
@@ -1014,6 +1021,7 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
               snapshot.data!.snapshot.value as Map<dynamic, dynamic>;
           final bool isMyTurn = gameData['currentTurn'] == userId;
           final bool gameComplete = gameData['isComplete'] == true;
+          final bool hasOpponent = gameData['opponent'] != null;
 
           return Padding(
             padding: EdgeInsets.all(16.0),
@@ -1030,13 +1038,15 @@ class _OnlineGameScreenState extends State<OnlineGameScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    gameComplete
-                        ? (gameData['winner'] == userId
-                            ? 'You won!'
-                            : gameData['winner'] == null
-                                ? 'Draw!'
-                                : 'Opponent won!')
-                        : (isMyTurn ? 'Your turn' : "Opponent's turn"),
+                    !hasOpponent
+                        ? 'Waiting for opponent...'
+                        : gameComplete
+                            ? (gameData['winner'] == userId
+                                ? 'You won!'
+                                : gameData['winner'] == null
+                                    ? 'Draw!'
+                                    : 'Opponent won!')
+                            : (isMyTurn ? 'Your turn' : "Opponent's turn"),
                     style: TextStyle(
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
